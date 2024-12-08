@@ -3,7 +3,7 @@
 ### Created by mrproxy
 
 # Define the Discord Webhook URL (no `=` at the start)
-$webhook = "https://discord.com/api/webhooks/1315398167768076348/FHFvfm3hhnJDsTNvuTR-5oB86OJY7kUwI-4F5S_Hxn7SdgZY1gXxaRQFuMO-yFFwP"
+$webhook = "https://discord.com/api/webhooks/1315398167768076348/FHFvfm3hhnJDsTNvuTR-5oB86OJY7kUwI-4F5S_Hxn7SdgZY1gXxaRQFuMO-yFFwPnPT"
 
 # Function for sending messages through Discord Webhook
 function Send-DiscordMessage {
