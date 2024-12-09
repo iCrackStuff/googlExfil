@@ -38,6 +38,7 @@ function Upload-FileToDiscord {
     $LF = "`r`n"
     $fileContent = [System.Text.Encoding]::ASCII.GetString($fileBytes)
 
+    # Include an empty content field to avoid Discord "empty message" error
     $body = (
         "--$boundary" + $LF +
         "Content-Disposition: form-data; name=""file""; filename=""$fileName""" + $LF +
@@ -46,13 +47,20 @@ function Upload-FileToDiscord {
         "--$boundary--"
     )
 
+    # Headers for the multipart request
     $headers = @{
         "Content-Type" = "multipart/form-data; boundary=$boundary"
     }
 
+    # Send the file to Discord via webhook, with an empty content field to avoid error
+    $bodyForRequest = @{
+        content = ""  # Add an empty message body to avoid "empty message" error
+        file = $body   # Attach the file data
+    }
+
     try {
         # Send the file to Discord via webhook
-        $response = Invoke-RestMethod -Uri $webhook -Method Post -Body $body -Headers $headers
+        $response = Invoke-RestMethod -Uri $webhook -Method Post -Body ($bodyForRequest | ConvertTo-Json) -Headers $headers
         Write-Host "File uploaded successfully."
     } catch {
         Write-Host "Failed to upload file to Discord: $_"
